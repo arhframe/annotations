@@ -1,5 +1,6 @@
 <?php
 namespace Arhframe\Annotations;
+include_once __DIR__ . '/RequiredAnnotation.php';
 /*
  * This file is part of the phpalchemy package.
  *
@@ -13,7 +14,6 @@ namespace Arhframe\Annotations;
  * Class Annotations
  * @author Arthur Halet <arthurhalet@free.fr>
  */
-
 class AnnotationsArhframe
 {
     /**
@@ -21,7 +21,11 @@ class AnnotationsArhframe
      * @var array
      */
     private static $annotationCache;
-
+    /**
+     * Stores the default namespace for Objects instance, usually used on methods like getMethodAnnotationsObjects()
+     * @var string
+     */
+    public $defaultNamespace = 'Arhframe\\Annotations\\';
     /**
      * Indicates that annotations should has strict behavior, 'false' by default
      * @var boolean
@@ -29,80 +33,9 @@ class AnnotationsArhframe
     private $strict = false;
 
     /**
-     * Stores the default namespace for Objects instance, usually used on methods like getMethodAnnotationsObjects()
-     * @var string
-     */
-    public $defaultNamespace = '';
-
-    /**
-     * Sets strict variable to true/false
-     * @param bool $value boolean value to indicate that annotations to has strict behavior
-     */
-    public function setStrict($value)
-    {
-        $this->strict = (bool) $value;
-    }
-
-    /**
-     * Sets default namespace to use in object instantiation
-     * @param string $namespace default namespace
-     */
-    public function setDefaultNamespace($namespace)
-    {
-        $this->defaultNamespace = $namespace;
-    }
-
-    /**
-     * Gets default namespace used in object instantiation
-     * @return string $namespace default namespace
-     */
-    public function getDefaultAnnotationNamespace()
-    {
-        return $this->defaultNamespace;
-    }
-
-    /**
-     * Gets all anotations with pattern @SomeAnnotation() from a given class
-     *
-     * @param  string $className class name to get annotations
-     * @return array  self::$annotationCache all annotated elements
-     */
-    public static function getClassAnnotations($className)
-    {
-        if (!isset(self::$annotationCache[$className])) {
-            $class = new \ReflectionClass($className);
-            self::$annotationCache[$className] = self::parseAnnotations($class->getDocComment());
-        }
-
-        return self::$annotationCache[$className];
-    }
-
-    /**
-     * Gets all anotations with pattern @SomeAnnotation() from a determinated method of a given class
-     *
-     * @param  string $className  class name
-     * @param  string $methodName method name to get annotations
-     * @return array  self::$annotationCache all annotated elements of a method given
-     */
-    public static function getMethodAnnotations($className, $methodName)
-    {
-        if (!isset(self::$annotationCache[$className . '::' . $methodName])) {
-            try {
-                $method = new \ReflectionMethod($className, $methodName);
-                $annotations = self::parseAnnotations($method->getDocComment());
-            } catch (\ReflectionException $e) {
-                $annotations = array();
-            }
-
-            self::$annotationCache[$className . '::' . $methodName] = $annotations;
-        }
-
-        return self::$annotationCache[$className . '::' . $methodName];
-    }
-    /**
      * Gets all anotations with pattern @SomeAnnotation() from a determinated property of a given class
      *
-     * @param  string $className    class name
+     * @param  string $className class name
      * @param  string $propertyName property name to get annotations
      * @return array  self::$annotationCache all annotated elements of a method given
      */
@@ -120,59 +53,6 @@ class AnnotationsArhframe
         }
 
         return self::$annotationCache[$className . ':::' . $propertyName];
-    }
-    /**
-     * Gets all anotations with pattern @SomeAnnotation() from a determinated method of a given class
-     * and instance its abcAnnotation class
-     *
-     * @param  string $className  class name
-     * @param  string $methodName method name to get annotations
-     * @return array  self::$annotationCache all annotated objects of a method given
-     */
-    public function getAnnotationsObjects($className, $methodName=null, $property=false)
-    {
-        if (!empty($methodName) && !$property) {
-            $annotations = $this->getMethodAnnotations($className, $methodName);
-        } elseif (!empty($methodName) && $property) {
-            getPropertyAnnotations($className, $methodName);
-        } else {
-            $annotations = $this->getClassAnnotations($className);
-        }
-        $objects     = array();
-
-        $i = 0;
-
-        foreach ($annotations as $annotationClass => $listParams) {
-            $annotationClass = ucfirst($annotationClass);
-            $class = $this->defaultNamespace . $annotationClass . 'Annotation';
-
-            // verify is the annotation class exists, depending if Annotations::strict is true
-            // if not, just skip the annotation instance creation.
-            if (! class_exists($class)) {
-                if ($this->strict) {
-                    throw new \RuntimeException(sprintf('Runtime Error: Annotation Class Not Found: %s', $class));
-                } else {
-                    // silent skip & continue
-                    continue;
-                }
-            }
-
-            if (empty($objects[$annotationClass])) {
-                $objects[$annotationClass] = new $class();
-            }
-
-            foreach ($listParams as $params) {
-                if (is_array($params)) {
-                    foreach ($params as $key => $value) {
-                        $objects[$annotationClass]->set($key, $value);
-                    }
-                } else {
-                    $objects[$annotationClass]->set($i++, $params);
-                }
-            }
-        }
-
-        return $objects;
     }
 
     /**
@@ -193,8 +73,8 @@ class AnnotationsArhframe
                 // annotations has arguments
                 if (isset($matches['args'][$i])) {
                     $argsParts = trim($matches['args'][$i]);
-                    $name      = $matches['name'][$i];
-                    $value     = self::parseArgs($argsParts);
+                    $name = $matches['name'][$i];
+                    $value = self::parseArgs($argsParts);
                 } else {
                     $value = array();
                 }
@@ -214,21 +94,21 @@ class AnnotationsArhframe
      */
     private static function parseArgs($content)
     {
-        $data  = array();
-        $len   = strlen($content);
-        $i     = 0;
-        $var   = '';
-        $val   = '';
+        $data = array();
+        $len = strlen($content);
+        $i = 0;
+        $var = '';
+        $val = '';
         $level = 1;
 
         $prevDelimiter = '';
         $nextDelimiter = '';
-        $nextToken     = '';
-        $composing     = false;
-        $type          = 'plain';
-        $delimiter     = null;
-        $quoted        = false;
-        $tokens        = array('"', '"', '{', '}', ',', '=');
+        $nextToken = '';
+        $composing = false;
+        $type = 'plain';
+        $delimiter = null;
+        $quoted = false;
+        $tokens = array('"', '"', '{', '}', ',', '=');
 
         while ($i <= $len) {
             $c = substr($content, $i++, 1);
@@ -238,9 +118,9 @@ class AnnotationsArhframe
                 //open delimiter
                 if (!$composing && empty($prevDelimiter) && empty($nextDelimiter)) {
                     $prevDelimiter = $nextDelimiter = $delimiter;
-                    $val           = '';
-                    $composing     = true;
-                    $quoted        = true;
+                    $val = '';
+                    $composing = true;
+                    $quoted = true;
                 } else {
                     // close delimiter
                     if ($c !== $nextDelimiter) {
@@ -255,22 +135,22 @@ class AnnotationsArhframe
                         if (',' !== substr($content, $i, 1)) {
                             throw new \InvalidArgumentException(sprintf(
                                 "Parse Error: missing comma separator near: ...%s<--",
-                                substr($content, ($i-10), $i)
+                                substr($content, ($i - 10), $i)
                             ));
                         }
                     }
 
                     $prevDelimiter = $nextDelimiter = '';
-                    $composing     = false;
-                    $delimiter     = null;
+                    $composing = false;
+                    $delimiter = null;
                 }
             } elseif (!$composing && in_array($c, $tokens)) {
                 switch ($c) {
                     case '=':
                         $prevDelimiter = $nextDelimiter = '';
-                        $level     = 2;
+                        $level = 2;
                         $composing = false;
-                        $type      = 'assoc';
+                        $type = 'assoc';
                         $quoted = false;
                         break;
                     case ',':
@@ -334,7 +214,7 @@ class AnnotationsArhframe
                 }
 
                 $level = 1;
-                $var   = $val = '';
+                $var = $val = '';
                 $composing = false;
                 $quoted = false;
             }
@@ -346,7 +226,7 @@ class AnnotationsArhframe
     /**
      * Try determinate the original type variable of a string
      *
-     * @param  string  $val  string containing possibles variables that can be cast to bool or int
+     * @param  string $val string containing possibles variables that can be cast to bool or int
      * @param  boolean $trim indicate if the value passed should be trimmed after to try cast
      * @return mixed   returns the value converted to original type if was possible
      */
@@ -373,5 +253,125 @@ class AnnotationsArhframe
         }
 
         return $val;
+    }
+
+    /**
+     * Sets strict variable to true/false
+     * @param bool $value boolean value to indicate that annotations to has strict behavior
+     */
+    public function setStrict($value)
+    {
+        $this->strict = (bool)$value;
+    }
+
+    /**
+     * Sets default namespace to use in object instantiation
+     * @param string $namespace default namespace
+     */
+    public function setDefaultNamespace($namespace)
+    {
+        $this->defaultNamespace = $namespace;
+    }
+
+    /**
+     * Gets default namespace used in object instantiation
+     * @return string $namespace default namespace
+     */
+    public function getDefaultAnnotationNamespace()
+    {
+        return $this->defaultNamespace;
+    }
+
+    /**
+     * Gets all anotations with pattern @SomeAnnotation() from a determinated method of a given class
+     * and instance its abcAnnotation class
+     *
+     * @param  string $className class name
+     * @param  string $methodName method name to get annotations
+     * @return array  self::$annotationCache all annotated objects of a method given
+     */
+    public function getAnnotationsObjects($className, $methodName = null, $property = false)
+    {
+
+        if (!empty($methodName) && !$property) {
+            $annotations = $this->getMethodAnnotations($className, $methodName);
+        } elseif (!empty($methodName) && $property) {
+            getPropertyAnnotations($className, $methodName);
+        } else {
+            $annotations = $this->getClassAnnotations($className);
+        }
+        $objects = array();
+        $i = 0;
+
+        foreach ($annotations as $annotationClass => $listParams) {
+            $annotationClass = ucfirst($annotationClass);
+            $class = $this->defaultNamespace . $annotationClass . 'Annotation';
+
+            // verify is the annotation class exists, depending if Annotations::strict is true
+            // if not, just skip the annotation instance creation.
+            if (!class_exists($class)) {
+                if ($this->strict) {
+                    throw new \RuntimeException(sprintf('Runtime Error: Annotation Class Not Found: %s', $class));
+                } else {
+                    // silent skip & continue
+                    continue;
+                }
+            }
+
+            if (empty($objects[$annotationClass])) {
+                $objects[$annotationClass] = new $class();
+            }
+
+            foreach ($listParams as $params) {
+                if (is_array($params)) {
+                    foreach ($params as $key => $value) {
+                        $objects[$annotationClass]->set($key, $value);
+                    }
+                } else {
+                    $objects[$annotationClass]->set($i++, $params);
+                }
+            }
+        }
+
+        return $objects;
+    }
+
+    /**
+     * Gets all anotations with pattern @SomeAnnotation() from a determinated method of a given class
+     *
+     * @param  string $className class name
+     * @param  string $methodName method name to get annotations
+     * @return array  self::$annotationCache all annotated elements of a method given
+     */
+    public static function getMethodAnnotations($className, $methodName)
+    {
+        if (!isset(self::$annotationCache[$className . '::' . $methodName])) {
+            try {
+                $method = new \ReflectionMethod($className, $methodName);
+                $annotations = self::parseAnnotations($method->getDocComment());
+            } catch (\ReflectionException $e) {
+                $annotations = array();
+            }
+
+            self::$annotationCache[$className . '::' . $methodName] = $annotations;
+        }
+
+        return self::$annotationCache[$className . '::' . $methodName];
+    }
+
+    /**
+     * Gets all anotations with pattern @SomeAnnotation() from a given class
+     *
+     * @param  string $className class name to get annotations
+     * @return array  self::$annotationCache all annotated elements
+     */
+    public static function getClassAnnotations($className)
+    {
+        if (!isset(self::$annotationCache[$className])) {
+            $class = new \ReflectionClass($className);
+            self::$annotationCache[$className] = self::parseAnnotations($class->getDocComment());
+        }
+
+        return self::$annotationCache[$className];
     }
 }
