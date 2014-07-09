@@ -108,7 +108,7 @@ class AnnotationsArhframe
         $type = 'plain';
         $delimiter = null;
         $quoted = false;
-        $tokens = array('"', '"', '{', '}', ',', '=');
+        $tokens = array('"', '"', ',', '=');
 
         while ($i <= $len) {
             $c = substr($content, $i++, 1);
